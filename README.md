@@ -10,6 +10,9 @@ The secondary objectives of the study focused on individual-level factors associ
 
 # Primary and Secondary Analyses
 ## Primary Analysis
+<img width="611" height="180" alt="Screenshot 2026-01-26 at 2 00 53 PM" src="https://github.com/user-attachments/assets/1c666577-fab6-44ec-9a8b-a2fad4c2ca50" />
+
+## Secondary Analysis
 
 
 # Reflection
