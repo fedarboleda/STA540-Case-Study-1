@@ -45,3 +45,9 @@ Vaughan, D., & Dancho, M. (2023). Applying functions in parallel with futurize. 
 Wickham, H. (2023). Regular expressions. Comprehensive R Archive Network. https://cran.r-project.org/web/packages/stringr/vignettes/regular-expressions.html
 
 Csardi, G. (2023). Suppressing conditions with pkgcond. Comprehensive R Archive Network. https://search.r-project.org/CRAN/refmans/pkgcond/html/suppress.html
+
+R Core Team. (2019). wilcox.test: Wilcoxon rank sum and signed rank tests (R package stats, version 3.6.2). RDocumentation. https://www.rdocumentation.org/packages/stats/versions/3.6.2/topics/wilcox.test
+
+R Core Team. (2019). fisher.test: Fisher’s exact test for count data (R package stats, version 3.6.2). RDocumentation. https://www.rdocumentation.org/packages/stats/versions/3.6.2/topics/fisher.test
+
+National Institute on Drug Abuse. (n.d.). TAPS Tool (Tobacco, Alcohol, Prescription medication, and other Substance use Tool). https://nida.nih.gov/taps2
