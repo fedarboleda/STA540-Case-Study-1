@@ -67,3 +67,6 @@ R Core Team. (2019). wilcox.test: Wilcoxon rank sum and signed rank tests (R pac
 R Core Team. (2019). fisher.test: Fisher’s exact test for count data (R package stats, version 3.6.2). RDocumentation. https://www.rdocumentation.org/packages/stats/versions/3.6.2/topics/fisher.test
 
 National Institute on Drug Abuse. (n.d.). TAPS Tool (Tobacco, Alcohol, Prescription medication, and other Substance use Tool). https://nida.nih.gov/taps2
+
+OpenAI. (2024). ChatGPT (large language model). https://chat.openai.com/ (specifically for formatting tables for results)
+
