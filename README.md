@@ -11,16 +11,24 @@ The secondary objectives of the study focused on individual-level factors associ
 # Primary and Secondary Analyses
 ## Primary Analysis
 <img width="449" height="185" alt="Screenshot 2026-01-26 at 5 39 08 PM" src="https://github.com/user-attachments/assets/1de5a603-d858-478c-a18a-82178aa340ac" />
+
 <img width="269" height="195" alt="Screenshot 2026-01-26 at 5 39 18 PM" src="https://github.com/user-attachments/assets/6aa4bf76-2f5c-4d1c-a54c-c168a6bebd12" />
+
 <img width="281" height="221" alt="Screenshot 2026-01-26 at 5 39 27 PM" src="https://github.com/user-attachments/assets/afae8837-8890-4d5d-9a40-109c7c7721cf" />
+
 <img width="288" height="247" alt="Screenshot 2026-01-26 at 6 59 51 PM" src="https://github.com/user-attachments/assets/26a72111-c831-4285-8b6a-08034aac5385" />
 
 ## Secondary Analysis
 <img width="1419" height="423" alt="Screenshot 2026-01-27 at 7 27 58 PM" src="https://github.com/user-attachments/assets/11aa7572-1f63-436d-a8d9-6eb22802fdff" />
+
 <img width="1420" height="253" alt="Screenshot 2026-01-27 at 3 30 45 PM" src="https://github.com/user-attachments/assets/bd4ef3f7-23a8-470c-ae7d-993668c5e042" />
+
 <img width="1418" height="271" alt="Screenshot 2026-01-27 at 3 30 55 PM" src="https://github.com/user-attachments/assets/ef366368-7de3-4975-8365-062eb18cde6c" />
+
 <img width="1418" height="282" alt="Screenshot 2026-01-27 at 3 31 06 PM" src="https://github.com/user-attachments/assets/179bf355-7c5f-45b7-80f4-5fbc3584fd7f" />
+
 <img width="1419" height="689" alt="Screenshot 2026-01-27 at 3 31 18 PM" src="https://github.com/user-attachments/assets/31fe624b-418c-4b4c-8de1-12f23a74942b" />
+
 <img width="1418" height="864" alt="Screenshot 2026-01-27 at 3 31 42 PM" src="https://github.com/user-attachments/assets/5ecb4030-fd1b-4f34-84d3-f7d38611aad9" />
 
 # Reflection
