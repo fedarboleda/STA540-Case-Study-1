@@ -68,5 +68,5 @@ R Core Team. (2019). fisher.test: Fisher’s exact test for count data (R packag
 
 National Institute on Drug Abuse. (n.d.). TAPS Tool (Tobacco, Alcohol, Prescription medication, and other Substance use Tool). https://nida.nih.gov/taps2
 
-OpenAI. (2024). ChatGPT (large language model). https://chat.openai.com/ (specifically for formatting tables for results)
+OpenAI. (2026). ChatGPT (large language model). https://chat.openai.com/ (specifically for formatting tables for results)
 
