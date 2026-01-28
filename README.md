@@ -34,7 +34,7 @@ Pairwise comparisons between sites within each wave were conducted using the Hoc
 
 # Extra Figure
 <img width="702" height="457" alt="Screenshot 2026-01-27 at 8 02 00 PM" src="https://github.com/user-attachments/assets/3527ad30-dedf-42e0-9747-544c21c9c038" />
-[add something here]
+This figure shows the proportion of participants who ordered an HIV self-test kit, segmented by agreement status with the statement: “People in my life would leave if I had HIV.” Study participants who agreed with this statement were less likely to order a test kit, with around 61% placing an order for one, while 74% ordered one among those who disagreed. This indicates that the social fear of having HIV and the fear of abandonment due to the disease could discourage people from attempting to find out if they have it in the first place, as opposed to those who may get more support from their peers and those close to them. These findings highlight the importance of addressing HIV-related stigma and social fears, as helping people be more comfortable with their HIV status could encourage them to buy kits and be proactive in HIV prevention.
 
 # References
 Stafylis, C., Vavala, G., Wang, Q., McLeman, B., Lemley, S. M., Young, S. D., Xie, H., Matthews, A. G., Oden, N., Revoredo, L., Shmueli-Blumberg, D., Hichborn, E. G., McKelle, E., Moran, L. M., Jacobs, P., Marsch, L. A., & Klausner, J. D. (2022). Relative effectiveness of social media, dating apps, and information search sites in promoting HIV self-testing: Observational cohort study. JMIR Formative Research, 6(9), e35648. https://doi.org/10.2196/35648
