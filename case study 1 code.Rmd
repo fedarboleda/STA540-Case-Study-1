@@ -1,0 +1,1123 @@
+
+# Setup
+
+```{r, warning = FALSE, message = FALSE}
+library(tidyverse)
+library(emmeans)
+library(knitr)
+library(stats)
+library(scales)
+hiv_kits <- read.csv("hiv_kits.csv")
+```
+
+# Helper Functions for Table 1
+
+```{r}
+# functions to help with formatting in table 1
+# takes logical vector and formats it as n (pct) for counts and percentages
+n_pct <- function(x, digits = 1) {
+  x <- x[!is.na(x)]
+  n <- sum(x)
+  N <- length(x)
+  pct <- if (N == 0) NA_real_ else 100 * n / N
+  pct_str <- if (is.na(pct)) "NA" else str_remove(format(round(pct, digits), 
+                                                         nsmall = digits), "\\.?0+$")
+  paste0(n, " (", pct_str, ")")
+}
+
+# takes categorical variable and formats it as n (pct) for counts and percentages
+# one row for each level of variable
+cat_n_pct <- function(x, levels, labels = levels, digits = 1) {
+  x <- x[!is.na(x)]
+  N <- length(x)
+  tibble(level = levels, label = labels) |>
+    mutate(
+      n = map_int(level, ~sum(x == .x, na.rm = TRUE)),
+      pct = if (N == 0) NA_real_ else 100 * n / N,
+      pct_str = if_else(
+        is.na(pct),
+        "NA",
+        str_remove(format(round(pct, digits), nsmall = digits), "\\.?0+$")
+      ),
+      value = paste0(n, " (", pct_str, ")")
+    ) |>
+    select(label, value)
+}
+
+# takes numeric vector and returns median (Q1-Q3) to display quantiles
+median_iqr <- function(x, digits = 0) {
+  x <- x[!is.na(x)]
+  if (length(x) == 0) return("NA")
+  q <- quantile(x, probs = c(0.25, 0.50, 0.75), na.rm = TRUE, names = FALSE, type = 1)
+  med <- round(q[2], digits)
+  q1  <- round(q[1], digits)
+  q3  <- round(q[3], digits)
+  paste0(med, " (", q1, "-", q3, ")")
+}
+
+# converts variables that resemble dates to Date objects
+to_date_safe <- function(x) {
+  if (inherits(x, "Date")) return(x)
+  if (inherits(x, "POSIXct") || inherits(x, "POSIXt")) return(as.Date(x))
+  suppressWarnings(as.Date(parse_date_time(x, orders = c("mdy", "ymd", "mdy HMS", "ymd HMS"))))
+}
+```
+
+# Analysis Population (N = 254)
+
+```{r}
+# isolate analysis population (need N = 254)
+hiv_obs <- hiv_kits |>
+  # keeps only participants who are flagged for inclusion in primary outcome analysis
+  filter(PO_FLAG == "Include") |>
+  # exclude Wave 3 participants
+  filter(is.na(WAVE) | WAVE != 3)
+```
+
+# Table 1
+
+```{r}
+# extract age (years)
+age_years <- as.numeric(hiv_obs$Q3_1)
+
+# Hispanic/Latinx ethnicity indicator (TRUE = Hispanic/Latinx)
+eth_hisp <- case_when(
+  hiv_obs$Q5_1 %in% c(1, "1") ~ TRUE,
+  hiv_obs$Q5_1 %in% c(2, "2") ~ FALSE,
+  TRUE ~ NA
+)
+
+# race categories derived from multi-select race codes
+# participants selecting >1 race are classified as Multiracial
+# otherwise mapped to single-race manuscript categories
+race5 <- {
+  x <- as.character(hiv_obs$Q5_3)
+
+  codes_list <- str_extract_all(x, "\\d+")
+  n_codes <- vapply(codes_list, function(z) length(unique(z)), integer(1))
+  has_code <- function(code) vapply(codes_list, function(z) code %in% unique(z), logical(1))
+
+  case_when(
+    is.na(x) | x == "" ~ NA_character_,
+    n_codes > 1 ~ "Multiracial",
+    has_code("25") ~ "American Indian or Alaskan Native",
+    has_code("24") ~ "Black or African American",
+    has_code("23") ~ "White",
+    TRUE ~ "Other"
+  )
+}
+
+# history of PrEP uptake
+# collapsed to manuscript-reported categories
+prep_hist2 <- case_when(
+  hiv_obs$Q6_2 %in% c(3, "3") ~ "Never taken PrEP",
+  hiv_obs$Q6_2 %in% c(1, "1") ~ "In the past 6 months",
+  hiv_obs$Q6_2 %in% c(2, "2") ~ "In the past 6 months",
+  TRUE ~ NA_character_
+)
+
+# number of male sex partners in past 90 days
+sex_partners_90d <- as.numeric(hiv_obs$Q11_2)
+
+# condom use frequency in the past 90 days
+condom_use <- case_when(
+  hiv_obs$Q11_3 %in% c(1, "1") ~ "Never",
+  hiv_obs$Q11_3 %in% c(2, "2") ~ "Sometimes",
+  hiv_obs$Q11_3 %in% c(3, "3") ~ "About half the time",
+  hiv_obs$Q11_3 %in% c(4, "4") ~ "Most of the time",
+  hiv_obs$Q11_3 %in% c(5, "5") ~ "Always",
+  TRUE ~ NA_character_
+)
+
+# indicator for condomless receptive anal sex in the past 90 days
+condomless_receptive <- case_when(
+  hiv_obs$Q11_4 %in% c(1, "1") ~ TRUE,
+  hiv_obs$Q11_4 %in% c(2, "2") ~ FALSE,
+  TRUE ~ NA
+)
+
+# indicator for ever having tested for HIV
+ever_tested <- case_when(
+  hiv_obs$Q11_5 %in% c(1, "1") ~ TRUE,
+  hiv_obs$Q11_5 %in% c(2, "2") ~ FALSE,
+  TRUE ~ NA
+)
+
+# time since last HIV test (months)
+# using precomputed variable if available
+months_since_last_test <- if ("LAST_HIV_TEST_MONTHS" %in% names(hiv_obs)) {
+  suppressWarnings(as.numeric(hiv_obs$LAST_HIV_TEST_MONTHS))
+} else {
+  base_dt <- if ("DATE_COMPLETED_BASELINE" %in% names(hiv_obs)) to_date_safe(hiv_obs$DATE_COMPLETED_BASELINE) else as.Date(NA)
+  last_dt <- to_date_safe(hiv_obs$Q11_6)
+  m <- suppressWarnings(time_length(interval(last_dt, base_dt), "months"))
+  round(m, 0)
+}
+
+# primary reason for not having tested for HIV among never-tested participants
+reason_not_tested <- case_when(
+  hiv_obs$Q11_7 %in% c(1, "1") ~ "Unlikely to be exposed to HIV",
+  hiv_obs$Q11_7 %in% c(2, "2") ~ "Afraid of testing HIV-positive",
+  hiv_obs$Q11_7 %in% c(3, "3") ~ "Did not want to think about HIV/HIV-positive",
+  hiv_obs$Q11_7 %in% c(4, "4") ~ "Worried about names being reported if positive",
+  hiv_obs$Q11_7 %in% c(5, "5") ~ "Dislike for needles",
+  hiv_obs$Q11_7 %in% c(6, "6") ~ "Unable to trust that the results will be confidential",
+  hiv_obs$Q11_7 %in% c(7, "7") ~ "Unaware of where to get tested",
+  hiv_obs$Q11_7 %in% c(8, "8") ~ "Other reasons",
+  TRUE ~ NA_character_
+)
+
+# building table 1
+table1rep <- bind_rows(
+  
+  # age (median and IQR)
+  tibble(Characteristic = "Age in years, median (IQR)",
+         Value = median_iqr(age_years, digits = 0)),
+  # ethnicity
+  tibble(Characteristic = "Ethnicity, n (%)", Value = ""), 
+  tibble(Characteristic = "    Hispanic/Latinx",
+         Value = n_pct(eth_hisp, digits = 0)),
+
+  # race
+  tibble(Characteristic = "Race, n (%)", Value = ""),
+  cat_n_pct(
+    race5,
+    levels = c("American Indian or Alaskan Native",
+               "Black or African American",
+               "White",
+               "Other",
+               "Multiracial"),
+    labels = c("    American Indian or Alaskan Native",
+               "    Black or African American",
+               "    White",
+               "    Other",
+               "    Multiracial"),
+    digits = 1
+  ) |> rename(Characteristic = label, Value = value),
+
+  # history of PrEP uptake
+  tibble(Characteristic = "History of PrEP uptake, n (%)", Value = ""),
+  cat_n_pct(
+    prep_hist2,
+    levels = c("Never taken PrEP", "In the past 6 months"),
+    labels = c("    Never taken PrEP", "    In the past 6 months"),
+    digits = 1
+  ) |> rename(Characteristic = label, Value = value),
+
+  # sexual behavior, last 90 days
+  tibble(Characteristic = "Number of male sex partners in the past 90 days, median (IQR)",
+         Value = median_iqr(sex_partners_90d, digits = 0)),
+
+  # condom use
+  tibble(Characteristic = "Condom use, n (%)", Value = ""),
+  cat_n_pct(
+    condom_use,
+    levels = c("Never", "Sometimes", "About half the time", "Most of the time", "Always"),
+    labels = c("    Never",
+               "    Sometimes",
+               "    About half the time",
+               "    Most of the time",
+               "    Always"),
+    digits = 1
+  ) |> rename(Characteristic = label, Value = value),
+
+  # condomless receptive anal sex
+  tibble(Characteristic = "Condomless receptive anal sex in the past 90 days, n (%)",
+         Value = n_pct(condomless_receptive, digits = 1)),
+
+  # HIV testing history
+  tibble(Characteristic = "Ever tested for HIV during lifetime, n (%)",
+         Value = n_pct(ever_tested, digits = 1)),
+
+  # time since last HIV test
+  tibble(Characteristic = "If tested for HIV, median (IQR)", Value = ""),
+  tibble(Characteristic = "    Months since last HIV test",
+         Value = median_iqr(months_since_last_test[ever_tested %in% TRUE], digits = 0)),
+
+  # never tested for HIV
+  tibble(Characteristic = "If not tested for HIV, n (%)",
+         Value = n_pct(ifelse(is.na(ever_tested), NA, !ever_tested), digits = 1)),
+
+  # reasons to not test
+  tibble(Characteristic = "Main reasons cited by the 63 participants for not getting tested, n (%)", Value = ""),
+  cat_n_pct(
+    reason_not_tested[ever_tested %in% FALSE],
+    levels = c(
+      "Unlikely to be exposed to HIV",
+      "Afraid of testing HIV-positive",
+      "Did not want to think about HIV/HIV-positive",
+      "Worried about names being reported if positive",
+      "Dislike for needles",
+      "Unable to trust that the results will be confidential",
+      "Unaware of where to get tested",
+      "Other reasons"
+    ),
+    labels = c(
+      "    Unlikely to be exposed to HIV",
+      "    Afraid of testing HIV-positive",
+      "    Did not want to think about HIV/HIV-positive",
+      "    Worried about names being reported if positive",
+      "    Dislike for needles",
+      "    Unable to trust that the results will be confidential",
+      "    Unaware of where to get tested",
+      "    Other reasons"
+    ),
+    digits = 1
+  ) |> rename(Characteristic = label, Value = value)
+)
+
+# reproduced table
+kable(table1rep)
+```
+
+# Primary Analysis
+
+```{r, message = FALSE}
+# add columns for kit being ordered and wave by site
+obs_w_ord <- hiv_obs |>
+  mutate(
+    SITE = as.character(SITE),
+    PLATFORM = as.character(PLATFORM),
+
+    # whether a kit was ordered
+    ORDERED = ORA_REDEEMED == "Yes",
+
+    # wave defined by site
+    WAVE_M = case_when(
+      SITE %in% c("Facebook", "Google", "Grindr") ~ 1L,
+      SITE %in% c("Instagram", "Jack'd", "Bing")  ~ 2L,
+      TRUE ~ NA_integer_
+    )
+  )
+
+# count number of kits by site
+tab2_counts <- obs_w_ord |>
+  group_by(WAVE_M, SITE, PLATFORM) |>
+  summarise(
+    KITS = sum(ORDERED),
+    .groups = "drop"
+  )
+
+# number of days in each wave
+days_by_wave <- tibble(
+  WAVE_M = c(1, 2),
+  DAYS = c(70, 38)
+)
+
+# add Bing as info site 
+site_cells <- tibble(
+  WAVE_M = c(1, 1, 1, 2, 2, 2),
+  SITE   = c("Facebook", "Google", "Grindr",
+             "Instagram", "Bing", "Jack'd"),
+  PLATFORM = c("Social media", "Info site", "Dating app",
+               "Social media", "Info site", "Dating app")
+)
+
+# reproduction of table 2 with rates
+table2rep <- tab2_counts |>
+  right_join(site_cells, by = c("WAVE_M", "SITE", "PLATFORM")) |>
+  mutate(KITS = replace_na(KITS, 0L)) |>
+  left_join(days_by_wave, by = "WAVE_M") |>
+  mutate(RATE = KITS / DAYS) |>
+  arrange(WAVE_M, SITE) |>
+  select(WAVE_M, PLATFORM, SITE, DAYS, KITS, RATE) |>
+  mutate(
+    PLATFORM = factor(
+      PLATFORM,
+      levels = c("Social media", "Dating app", "Info site")
+    ),
+    SITE = factor(
+      SITE,
+      levels = c(
+        "Facebook", "Instagram",
+        "Grindr", "Jack'd",
+        "Google", "Bing"
+      )
+    )
+  ) |>
+  arrange(PLATFORM, SITE)
+
+# table to show daily rates (replicate table 2)
+kable(
+  table2rep,
+  col.names = c(
+    "Wave",
+    "Platform",
+    "Site",
+    "Days",
+    "Kits Ordered",
+    "Rate (kits/day)"
+  ),
+  digits = 2,
+  caption = "Self-test kit ordering counts and rates by platform, site, and wave"
+)
+
+# data for model
+model_data <- table2rep |>
+  transmute(
+    wave = factor(WAVE_M),
+    platform = factor(PLATFORM),
+    site = SITE,
+    t = DAYS,
+    o = KITS 
+  )
+
+# poisson regression with log time offset
+fit_pois <- glm(
+  o ~ wave * platform,
+  family = poisson(link = "log"),
+  offset = log(t),
+  data = model_data
+)
+
+# estimate rates, log(1) offset for daily rate
+emm_rates <- emmeans(
+  fit_pois,
+  ~ platform | wave,
+  type = "response",
+  offset = log(1)
+)
+
+# table to show estimates rates
+rates_tbl <- as.data.frame(emm_rates) |>
+  mutate(
+    Wave = paste("Wave", wave),
+    Rate = rate,
+    CI = sprintf("[%.2f, %.2f]", asymp.LCL, asymp.UCL)
+  ) |>
+  select(
+    Wave,
+    Platform = platform,
+    Rate,
+    CI
+  ) |>
+  arrange(Wave, Platform)
+
+kable(
+  rates_tbl,
+  digits = 3,
+  caption = "Estimated kit ordering rates (kits/day) by platform and wave"
+)
+
+# do pairwise comparisons
+contrast_tbl <- pairs(
+  emm_rates,
+  by = "wave",
+  adjust = "hochberg"
+) |>
+  as.data.frame()
+
+# put p-values in table
+contrast_tbl_p <- contrast_tbl |>
+  mutate(
+    Wave = paste("Wave", wave),
+    Comparison = contrast,
+    Adj_P = p.value
+  ) |>
+  select(
+    Wave,
+    Comparison,
+    Adj_P
+  ) |>
+  arrange(Wave)
+
+kable(
+  contrast_tbl_p,
+  digits = 3,
+  caption = "Hochberg-adjusted p-values for pairwise comparisons of platform-specific kit ordering rates within wave"
+)
+```
+
+# Alternative Primary Analysis With Bing > 0 Kits
+
+```{r, message = FALSE, warning = FALSE}
+# make Bing have 0.5 kits
+model_data_alt <- model_data |>
+  mutate(o = if_else(o == 0, 0.5, as.integer(o)))
+
+# poisson regression with log time offset and alternate data
+fit_pois_alt <- glm(
+  o ~ wave * platform,
+  family = poisson(link = "log"),
+  offset = log(t),
+  data = model_data_alt
+)
+
+# estimate rates for alt data, log(1) offset for daily rate
+emm_rates_alt <- emmeans(
+  fit_pois_alt,
+  ~ platform | wave,
+  type = "response",
+  offset = log(1)
+)
+
+# do pairwise comparisons for alt data
+contrast_tbl_alt <- pairs(
+  emm_rates_alt,
+  by = "wave",
+  adjust = "hochberg"
+) |>
+  as.data.frame()
+
+# put p-values in table for alt data
+contrast_tbl_p_alt <- contrast_tbl_alt |>
+  mutate(
+    Wave = paste("Wave", wave),
+    Comparison = contrast,
+    Adj_P = p.value
+  ) |>
+  select(
+    Wave,
+    Comparison,
+    Adj_P
+  ) |>
+  arrange(Wave)
+
+kable(
+  contrast_tbl_p_alt,
+  digits = 3,
+  caption = "Hochberg-adjusted p-values for pairwise comparisons of platform-specific kit ordering rates within wave, with Bing count = 0.5"
+)
+```
+
+# Helper Functions for Secondary Analysis
+
+```{r}
+# renaming levels for variables needed for secondary analysis
+obs_secondary <- obs_w_ord |>
+  # table b
+  mutate(
+    Q15_1_f = factor(
+      Q15_1,
+      levels = 1:5,
+      labels = c(
+        "Precontemplation: I do not see any need to regularly test for HIV",
+        "Contemplation: I think I should get tested for HIV regularly, but I am not sure",
+        "Determination: I am ready to start getting regularly tested for HIV",
+        "Action: I am trying to get tested regularly for HIV",
+        "Maintenance: I have been getting tested for HIV regularly over the past few years"
+      )
+    )
+  ) |>
+  # table c
+  mutate(
+    across(
+      Q15_3:Q15_7,
+      ~ factor(.x, levels = c(1, 2), labels = c("Agree", "Disagree")),
+      .names = "{.col}_f"
+    )
+  ) |>
+  # table e
+  mutate(
+    across(
+      Q14_2:Q14_5,
+      ~ factor(
+        .x,
+        levels = 1:7,
+        labels = c(
+          "Strongly agree",
+          "Agree",
+          "Somewhat agree",
+          "Neither agree nor disagree",
+          "Somewhat disagree",
+          "Disagree",
+          "Strongly disagree"
+        ),
+        ordered = TRUE
+      ),
+      .names = "{.col}_f"
+    )
+  ) |>
+  # table f special coding (28-34)
+  mutate(
+    Q16_1_f = factor(
+      Q16_1,
+      levels = c(28, 30, 33, 34),
+      labels = c("Strongly agree", "Agree", "Disagree", "Strongly disagree"),
+      ordered = TRUE
+    )
+  ) |>
+  # table f
+  mutate(
+    across(
+      Q16_2:Q16_7,
+      ~ factor(
+        .x,
+        levels = c(1, 2, 6, 7),
+        labels = c("Strongly agree", "Agree", "Disagree", "Strongly disagree"),
+        ordered = TRUE
+      ),
+      .names = "{.col}_f"
+    )
+  )
+
+# helper functions
+# Wilcoxon rank-sum p-value calculator
+wilcox_p <- function(df, var_num) {
+  x <- df |>
+    select(ORDERED, value = all_of(var_num)) |>
+    filter(!is.na(ORDERED), !is.na(value))
+
+  if (n_distinct(x$ORDERED) < 2) return(NA_real_)
+
+  suppressWarnings(wilcox.test(value ~ ORDERED, data = x)$p.value)
+}
+
+# Fisher exact p-value for tables
+fisher_p <- function(df, var_cat) {
+  x <- df |>
+    select(ORDERED, value = all_of(var_cat)) |>
+    filter(!is.na(ORDERED), !is.na(value))
+
+  if (n_distinct(x$ORDERED) < 2) return(NA_real_)
+  if (n_distinct(x$value) < 2) return(NA_real_)
+
+  tab <- table(x$ORDERED, x$value)
+  suppressWarnings(fisher.test(tab)$p.value)
+}
+
+# counts and percents for categorical table
+cat_counts <- function(df, var_f, labels_vec, ordered_out = FALSE) {
+  df |>
+    filter(!is.na(.data[[var_f]]), !is.na(ORDERED)) |>
+    mutate(response = as.character(.data[[var_f]])) |>
+    count(ORDERED, response, name = "n") |>
+    group_by(ORDERED) |>
+    mutate(N = sum(n)) |>
+    ungroup() |>
+    complete(
+      ORDERED,
+      response = labels_vec,
+      fill = list(n = 0, N = NA_integer_)
+    ) |>
+    group_by(ORDERED) |>
+    mutate(
+      N = ifelse(is.na(N), sum(n), N),
+      percent = round(100 * n / N, 1),
+      n_over_N = paste0(n, "/", N)
+    ) |>
+    ungroup() |>
+    mutate(response = factor(response, levels = labels_vec, ordered = ordered_out))
+}
+
+# categorical Fisher table builder (either binary or multi-level)
+build_cat_fisher_table <- function(df, vars_cat, item_text, labels_map) {
+  map_dfr(vars_cat, function(v) {
+    counts <- cat_counts(
+      df = df,
+      var_f = paste0(v, "_f"),
+      labels_vec = labels_map[[v]],
+      ordered_out = FALSE
+    ) |>
+      mutate(item = item_text[[v]])
+
+    counts |>
+      mutate(p_value = fisher_p(df, v))
+  }) |>
+    mutate(group = ifelse(ORDERED, "Ordered", "Did not order")) |>
+    select(item, response, group, n_over_N, percent, p_value) |>
+    pivot_wider(
+      names_from = group,
+      values_from = c(n_over_N, percent),
+      names_glue = "{group}_{.value}"
+    ) |>
+    arrange(
+      factor(item, levels = unname(item_text)),
+      response
+    ) |>
+    mutate(
+      p_value = ifelse(
+        is.na(p_value), NA_character_,
+        ifelse(p_value < 0.001, "<.001", sprintf("%.3f", p_value))
+      )
+    ) |>
+    rename(
+      `Ordered test kit (n/N)` = Ordered_n_over_N,
+      `Ordered test kit (%)` = Ordered_percent,
+      `Did not order (n/N)` = `Did not order_n_over_N`,
+      `Did not order (%)` = `Did not order_percent`,
+      `P-value (Fisher)` = p_value
+    )
+}
+
+# Likert table builder using Wilcoxon
+build_likert_table <- function(df, vars_num, item_text, labels_txt) {
+  map_dfr(vars_num, function(v) {
+    counts <- cat_counts(
+      df = df,
+      var_f = paste0(v, "_f"),
+      labels_vec = labels_txt,
+      ordered_out = TRUE
+    ) |>
+      mutate(item = item_text[[v]])
+
+    counts |>
+      mutate(p_value = wilcox_p(df, v))
+  }) |>
+    mutate(group = ifelse(ORDERED, "Ordered", "Did not order")) |>
+    select(item, response, group, n_over_N, percent, p_value) |>
+    pivot_wider(
+      names_from = group,
+      values_from = c(n_over_N, percent),
+      names_glue = "{group}_{.value}"
+    ) |>
+    arrange(
+      factor(item, levels = unname(item_text)),
+      response
+    ) |>
+    mutate(
+      p_value = ifelse(
+        is.na(p_value), NA_character_,
+        ifelse(p_value < 0.001, "<.001", sprintf("%.3f", p_value))
+      )
+    ) |>
+    rename(
+      `Ordered test kit (n/N)` = Ordered_n_over_N,
+      `Ordered test kit (%)` = Ordered_percent,
+      `Did not order (n/N)` = `Did not order_n_over_N`,
+      `Did not order (%)` = `Did not order_percent`,
+      `P-value (Wilcoxon)` = p_value
+    )
+}
+
+# continuous mean and SD calculator
+cont_mean_sd <- function(df, var_num, digits = 1) {
+  df |>
+    select(ORDERED, value = all_of(var_num)) |>
+    filter(!is.na(ORDERED), !is.na(value)) |>
+    group_by(ORDERED) |>
+    summarise(
+      mean = mean(value),
+      sd   = sd(value),
+      .groups = "drop"
+    ) |>
+    mutate(
+      mean_sd = paste0(
+        sprintf(paste0("%.", digits, "f"), mean),
+        " (",
+        sprintf(paste0("%.", digits, "f"), sd),
+        ")"
+      )
+    ) |>
+    select(ORDERED, mean_sd)
+}
+
+# build continuous variable table 
+build_cont_table <- function(df, vars_num, item_text, digits = 1) {
+  map_dfr(vars_num, function(v) {
+    msd <- cont_mean_sd(df, v, digits = digits) |>
+      mutate(group = ifelse(ORDERED, "Ordered", "Did not order")) |>
+      select(group, mean_sd) |>
+      pivot_wider(names_from = group, values_from = mean_sd)
+
+    p <- wilcox_p(df, v)
+
+    tibble(
+      item = item_text[[v]],
+      `Ordered test kit Mean (SD)` = msd$Ordered,
+      `Did not order test kit Mean (SD)` = msd$`Did not order`,
+      `P-value (Wilcoxon)` = ifelse(
+        is.na(p), NA_character_,
+        ifelse(p < 0.001, "<.001", sprintf("%.3f", p))
+      )
+    )
+  }) |>
+    arrange(factor(item, levels = unname(item_text)))
+}
+```
+
+# Secondary Analysis (Tables b-f)
+
+```{r}
+# table b
+item_text_b <- c(
+  Q15_1 = "Stage of Health Behavior Change (readiness to test for HIV)"
+)
+labels_map_b <- list(
+  Q15_1 = levels(obs_secondary$Q15_1_f)
+)
+table_b <- build_cat_fisher_table(
+  df = obs_secondary,
+  vars_cat = c("Q15_1"),
+  item_text = item_text_b,
+  labels_map = labels_map_b
+)
+table_b <- table_b |>
+  mutate(
+    item = ifelse(row_number() == 1, item, ""),
+    `P-value (Fisher)` = ifelse(row_number() == 1, `P-value (Fisher)`, "")
+)
+kable(
+  table_b,
+  caption = "b. Stage of Health Behavior Change"
+)
+
+# table c
+vars_c <- paste0("Q15_", 3:7)
+item_text_c <- c(
+  Q15_3 = "Getting tested for HIV helps people feel better",
+  Q15_4 = "Getting tested for HIV helps people from getting HIV",
+  Q15_5 = "People in my life would leave if I had HIV",
+  Q15_6 = "People who tested positive for HIV should hide it from others",
+  Q15_7 = "I would rather not know if I have HIV"
+)
+labels_map_c <- setNames(
+  rep(list(c("Agree", "Disagree")), length(vars_c)),
+  vars_c
+)
+table_c <- build_cat_fisher_table(
+  df = obs_secondary,
+  vars_cat = vars_c,
+  item_text = item_text_c,
+  labels_map = labels_map_c
+)
+table_c <- table_c |>
+  mutate(
+    item = ifelse(row_number() %% 2 == 1, item, ""),
+    `P-value (Fisher)` = ifelse(row_number() %% 2 == 1, `P-value (Fisher)`, "")
+)
+kable(
+  table_c,
+  caption = "c. Attitudes toward human immunodeficiency virus (HIV) testing"
+)
+
+# table d
+vars_d <- c("Q94_1", paste0("Q94_", 5:13))
+item_text_d <- c(
+  Q94_1 = "I am less threatened by the idea of being HIV positive than I used to be",
+  Q94_5 = "I am less worried about HIV infection than I used to be",
+  Q94_6 = "I think HIV/AIDS is less of a problem than it used to be",
+  Q94_7 = "I think HIV/AIDS is a less serious threat than it used to be because of new HIV/AIDS treatments",
+  Q94_8 = "I am much less concerned about becoming HIV positive myself because of new HIV/AIDS treatments",
+  Q94_9 = "I think that condom use during sex is less necessary now that new HIV/AIDS treatments are available",
+  Q94_10 = "I think that someone who is HIV positive now needs to care less about condom use",
+  Q94_11 = "I think that the need for condom use is less than it used to be, because you can always start new treatments",
+  Q94_12 = "I think that someone who is HIV positive and uses new HIV/AIDS treatments can be cured",
+  Q94_13 = "I think that new HIV/AIDS treatments can eradicate the virus from your body"
+)
+table_d <- build_cont_table(
+  df = obs_secondary,
+  vars_num = vars_d,
+  item_text = item_text_d,
+  digits = 1
+)
+kable(
+  table_d,
+  caption = "d. Attitudes toward human immunodeficiency virus (HIV) treatment (continuous scale from 1 [strongly disagree] to 7 [strongly
+agree])"
+)
+
+# table e
+item_text_e <- c(
+  Q14_2 = "I feel afraid of people living with HIV/AIDS",
+  Q14_3 = "I could not be friends with someone who has HIV/AIDS",
+  Q14_4 = "People who get HIV/AIDS through sex or drug use got what they deserve",
+  Q14_5 = "I feel anger toward people with HIV/AIDS"
+)
+labels_e <- c(
+  "Strongly agree",
+  "Agree",
+  "Somewhat agree",
+  "Neither agree nor disagree",
+  "Somewhat disagree",
+  "Disagree",
+  "Strongly disagree"
+)
+table_e <- build_likert_table(
+  df = obs_secondary,
+  vars_num = paste0("Q14_", 2:5),
+  item_text = item_text_e,
+  labels_txt = labels_e
+)
+table_e <- table_e |>
+  mutate(
+    item = ifelse((row_number() - 1) %% 7 == 0, item, ""),
+    `P-value (Wilcoxon)` = ifelse((row_number() - 1) %% 7 == 0, `P-value (Wilcoxon)`, "")
+)
+kable(
+  table_e,
+  caption = "e. Human immunodeficiency virus (HIV)-related stigma among study participants"
+)
+
+# table f
+item_text_f <- c(
+  Q16_1 = "You’d better be cautious when dealing with health care organizations",
+  Q16_2 = "Patients have sometimes been deceived or misled by health care organizations",
+  Q16_3 = "When health care organizations make mistakes they usually cover it up",
+  Q16_4 = "Health care organizations have sometimes done harmful experiments on patients without their knowledge",
+  Q16_5 = "Health care organizations don’t always keep your information totally private",
+  Q16_6 = "Sometimes I wonder if health care organizations really know what they are doing",
+  Q16_7 = "Mistakes are common in health care organizations"
+)
+labels_f <- c("Strongly agree", "Agree", "Disagree", "Strongly disagree")
+table_f <- build_likert_table(
+  df = obs_secondary,
+  vars_num = paste0("Q16_", 1:7),
+  item_text = item_text_f,
+  labels_txt = labels_f
+)
+table_f <- table_f |>
+  mutate(
+    item = ifelse((row_number() - 1) %% 4 == 0, item, ""),
+    `P-value (Wilcoxon)` = ifelse((row_number() - 1) %% 4 == 0, `P-value (Wilcoxon)`, "")
+)
+kable(
+  table_f,
+  caption = "f. Medical mistrust"
+)
+```
+
+# Secondary Analysis (Table a)
+
+```{r}
+# creating dataframe for table a (substance use) with rules
+obs_table_a <- obs_secondary |>
+  mutate(
+    # none: no alcohol use in past 3 months
+    # problem use: alcohol use with exactly one additional alcohol-related problem
+    # high-risk use: alcohol use with two or more additional alcohol-related problems
+    a1 = ifelse(Q13_1 == 1, 1, ifelse(Q13_1 == 2, 0, NA_real_)),
+    a2 = ifelse(Q13_2 == 1, 1, ifelse(Q13_2 == 2, 0, NA_real_)),
+    a3 = ifelse(Q13_3 == 1, 1, ifelse(Q13_3 == 2, 0, NA_real_)),
+    a4 = ifelse(Q13_4 == 1, 1, ifelse(Q13_4 == 2, 0, NA_real_)),
+
+    alcohol_score = case_when(
+      Q13_1 == 2 ~ 0,
+      Q13_1 == 1 ~ a1 + coalesce(a2, 0) + coalesce(a3, 0) + coalesce(a4, 0),
+      TRUE ~ NA_real_
+    ),
+
+    alcohol_risk = case_when(
+      alcohol_score == 0 ~ "None",
+      alcohol_score == 1 ~ "Problem use",
+      alcohol_score >= 2 ~ "High Risk Substance Use",
+      TRUE ~ NA_character_
+    ),
+
+    alcohol_risk_f = factor(
+      ifelse(is.na(alcohol_risk), "None", alcohol_risk),
+      levels = c("None", "Problem use", "High Risk Substance Use")
+    ),
+    alcohol_risk = as.character(alcohol_risk_f),
+
+    # none: no cannabis use in past 3 months
+    # problem use: cannabis use with exactly one additional cannabis-related problem
+    # high-risk use: cannabis use with two or more additional cannabis-related problems
+    cannabis_score = case_when(
+      Q13_5 == 2 ~ 0,
+      Q13_5 == 1 ~ as.numeric(Q13_5 == 1) +
+        coalesce(as.numeric(Q13_6 == 1), 0) +
+        coalesce(as.numeric(Q13_7 == 1), 0),
+      TRUE ~ NA_real_
+    ),
+
+    cannabis_risk = case_when(
+      cannabis_score == 0 ~ "None",
+      cannabis_score == 1 ~ "Problem use",
+      cannabis_score >= 2 ~ "High Risk Substance Use",
+      TRUE ~ NA_character_
+    ),
+
+    cannabis_risk_f = factor(
+      ifelse(is.na(cannabis_risk), "None", cannabis_risk),
+      levels = c("None", "Problem use", "High Risk Substance Use")
+    ),
+    cannabis_risk = as.character(cannabis_risk_f),
+
+    # none: no stimulant use in past 3 months
+    # problem/high-risk use: any stimulant use or stimulant-related problem
+    stimulant_score = case_when(
+      Q13_8 == 2 ~ 0,
+      Q13_8 == 1 ~ as.numeric(Q13_8 == 1) +
+        coalesce(as.numeric(Q13_9 == 1), 0) +
+        coalesce(as.numeric(Q13_10 == 1), 0),
+      TRUE ~ NA_real_
+    ),
+
+    stimulant_risk = case_when(
+      stimulant_score == 0 ~ "None",
+      stimulant_score >= 1 ~ "Problem Use/High Risk Substance Use",
+      TRUE ~ NA_character_
+    ),
+
+    stimulant_risk_f = factor(
+      ifelse(is.na(stimulant_risk), "None", stimulant_risk),
+      levels = c("None", "Problem Use/High Risk Substance Use")
+    ),
+    stimulant_risk = as.character(stimulant_risk_f),
+
+    # none: no heroin use and no prescription opioid misuse
+    # problem/high-risk use: any heroin use or prescription opioid misuse or related problem
+    opioid_score = case_when(
+      Q13_11 == 2 & Q13_14 == 2 ~ 0,
+      Q13_11 == 1 | Q13_14 == 1 ~
+        coalesce(as.numeric(Q13_11 == 1), 0) +
+        coalesce(as.numeric(Q13_12 == 1), 0) +
+        coalesce(as.numeric(Q13_13 == 1), 0) +
+        coalesce(as.numeric(Q13_14 == 1), 0) +
+        coalesce(as.numeric(Q13_15 == 1), 0) +
+        coalesce(as.numeric(Q13_16 == 1), 0),
+      TRUE ~ NA_real_
+    ),
+
+    opioid_risk = case_when(
+      opioid_score == 0 ~ "None",
+      opioid_score >= 1 ~ "Problem Use/ High Risk Substance Use",
+      TRUE ~ NA_character_
+    ),
+
+    opioid_risk_f = factor(
+      ifelse(is.na(opioid_risk), "None", opioid_risk),
+      levels = c("None", "Problem Use/ High Risk Substance Use")
+    ),
+    opioid_risk = as.character(opioid_risk_f),
+
+    # "eligible" for prescription misuse
+    Q12_4_clean = ifelse(Q12_4 == 9999, NA_real_, as.numeric(Q12_4)),
+    rx_eligible = Q12_4_clean %in% c(1, 4, 5, 6),
+
+    # none: no sedative use or not eligible for prescription misuse module
+    # problem/high-risk use: any sedative use or sedative-related problem
+    # missing: eligible for prescription misuse module but sedative use not reported
+    Q13_17_clean = ifelse(Q13_17 == 9999, NA_real_, as.numeric(Q13_17)),
+    Q13_18_clean = ifelse(Q13_18 == 9999, NA_real_, as.numeric(Q13_18)),
+    Q13_19_clean = ifelse(Q13_19 == 9999, NA_real_, as.numeric(Q13_19)),
+
+    sedative_score = case_when(
+      Q13_17_clean == 2 ~ 0,
+      Q13_17_clean == 1 ~ 1 +
+        coalesce(as.numeric(Q13_18_clean == 1), 0) +
+        coalesce(as.numeric(Q13_19_clean == 1), 0),
+      TRUE ~ NA_real_
+    ),
+
+    sedative_risk = case_when(
+      is.na(Q13_17_clean) & rx_eligible ~ "Missing",
+      is.na(Q13_17_clean) & !rx_eligible ~ "None",
+      sedative_score == 0 ~ "None",
+      sedative_score >= 1 ~ "Problem use/High Risk Substance Use",
+      TRUE ~ "Missing"
+    ),
+
+    sedative_risk_f = factor(
+      sedative_risk,
+      levels = c("None", "Problem use/High Risk Substance Use", "Missing")
+    ),
+    sedative_risk = as.character(sedative_risk_f),
+
+    # none: no prescribed stimulant misuse or not eligible for prescription misuse module
+    # problem/high-risk use: any prescribed stimulant misuse or related problem
+    # missing: eligible for prescription misuse module but stimulant misuse not reported
+    Q13_20_clean = ifelse(Q13_20 == 9999, NA_real_, as.numeric(Q13_20)),
+    Q13_21_clean = ifelse(Q13_21 == 9999, NA_real_, as.numeric(Q13_21)),
+    Q13_22_clean = ifelse(Q13_22 == 9999, NA_real_, as.numeric(Q13_22)),
+
+    prescribed_stim_score = case_when(
+      Q13_20_clean == 2 ~ 0,
+      Q13_20_clean == 1 ~ 1 +
+        coalesce(as.numeric(Q13_21_clean == 1), 0) +
+        coalesce(as.numeric(Q13_22_clean == 1), 0),
+      TRUE ~ NA_real_
+    ),
+
+    prescribed_stim_risk = case_when(
+      is.na(Q13_20_clean) & rx_eligible ~ "Missing",
+      is.na(Q13_20_clean) & !rx_eligible ~ "None",
+      prescribed_stim_score == 0 ~ "None",
+      prescribed_stim_score >= 1 ~ "Problem use/High Risk Substance Use",
+      TRUE ~ "Missing"
+    ),
+
+    prescribed_stim_risk_f = factor(
+      prescribed_stim_risk,
+      levels = c("None", "Problem use/High Risk Substance Use", "Missing")
+    ),
+    prescribed_stim_risk = as.character(prescribed_stim_risk_f)
+  ) |>
+  select(
+    -a1, -a2, -a3, -a4,
+    -Q12_4_clean, -rx_eligible,
+    -Q13_17_clean, -Q13_18_clean, -Q13_19_clean,
+    -Q13_20_clean, -Q13_21_clean, -Q13_22_clean
+  )
+
+# building table a
+vars_a <- c(
+  "alcohol_risk",
+  "cannabis_risk",
+  "stimulant_risk",
+  "opioid_risk",
+  "sedative_risk",
+  "prescribed_stim_risk"
+)
+item_text_a <- c(
+  alcohol_risk = "Alcohol",
+  cannabis_risk = "Cannabis",
+  stimulant_risk = "Stimulants",
+  opioid_risk = "Opioid",
+  sedative_risk = "Sedative",
+  prescribed_stim_risk = "Prescribed stimulant"
+)
+labels_map_a <- list(
+  alcohol_risk = levels(obs_table_a$alcohol_risk_f),
+  cannabis_risk = levels(obs_table_a$cannabis_risk_f),
+  stimulant_risk = levels(obs_table_a$stimulant_risk_f),
+  opioid_risk = levels(obs_table_a$opioid_risk_f),
+  sedative_risk = levels(obs_table_a$sedative_risk_f),
+  prescribed_stim_risk = levels(obs_table_a$prescribed_stim_risk_f)
+)
+table_a <- build_cat_fisher_table(
+  df = obs_table_a,
+  vars_cat = vars_a,
+  item_text = item_text_a,
+  labels_map = labels_map_a
+)
+table_a <- table_a |>
+  group_by(item) |>
+  mutate(
+    item = ifelse(row_number() == 1, item, ""),
+    `P-value (Fisher)` = ifelse(row_number() == 1, `P-value (Fisher)`, "")
+  ) |>
+  ungroup()
+kable(
+  table_a,
+  caption = "a. Tobacco, alcohol, prescription medications, and other substance use"
+)
+```
+
+# Extra Figure
+
+```{r}
+# calculate proportion who ordered kits among responses to: 
+# People in my life would leave if I had HIV
+figure_data <- obs_secondary |>
+  filter(!is.na(Q15_5_f), !is.na(ORDERED)) |>  # filter out NAs
+  group_by(Q15_5_f) |>
+  summarise(
+    prop_ordered = sum(ORDERED) / n()
+  )
+
+# bar plot showing proportions
+ggplot(figure_data, aes(x = Q15_5_f, y = prop_ordered)) +
+  geom_col(fill = "lightblue") +
+  geom_text(
+    aes(label = percent(prop_ordered, accuracy = 1)),
+    vjust = -0.4,
+    size = 3.5
+  ) +
+  scale_y_continuous(
+    labels = percent_format(), 
+    limits = c(0, 1)
+  ) +
+  labs(
+    title = "HIV Kit Ordering by Agreement with the following statement:", 
+    subtitle = "“People in my life would leave if I had HIV”",
+    x = NULL,
+    y = "Proportion that ordered a test kit"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank()
+  )
+```
