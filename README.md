@@ -33,7 +33,8 @@ Pairwise comparisons between sites within each wave were conducted using the Hoc
 [add something here]. 
 
 # Extra Figure
-
+<img width="702" height="457" alt="Screenshot 2026-01-27 at 8 02 00 PM" src="https://github.com/user-attachments/assets/3527ad30-dedf-42e0-9747-544c21c9c038" />
+[add something here]
 
 # References
 Stafylis, C., Vavala, G., Wang, Q., McLeman, B., Lemley, S. M., Young, S. D., Xie, H., Matthews, A. G., Oden, N., Revoredo, L., Shmueli-Blumberg, D., Hichborn, E. G., McKelle, E., Moran, L. M., Jacobs, P., Marsch, L. A., & Klausner, J. D. (2022). Relative effectiveness of social media, dating apps, and information search sites in promoting HIV self-testing: Observational cohort study. JMIR Formative Research, 6(9), e35648. https://doi.org/10.2196/35648
